@@ -24,6 +24,7 @@ class PSUControl_TPLink(octoprint.plugin.StartupPlugin,
     def get_settings_defaults(self):
         return dict(
             address = '',
+            port = 9999,
             plug = 0
         )
 
@@ -153,7 +154,7 @@ class PSUControl_TPLink(octoprint.plugin.StartupPlugin,
             self._logger.error("Unable to resolve hostname {}".format(self.config['address']))
             return result
 
-        port = 9999
+        port = self.config['port']
 
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:

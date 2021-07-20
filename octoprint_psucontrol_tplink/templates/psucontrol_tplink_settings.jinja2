@@ -11,6 +11,14 @@
         </div>
     </div>
     <div class="control-group">
+        <label class="control-label">Port</label>
+        <div class="controls">
+            <input type="number" min="1024" max="65535" class="input-mini" data-bind="value: settings.plugins.psucontrol_tplink.port" placeholder="9999">
+            <br />
+            <span class="help-inline">Default port: 9999. Only change if you know what you are doing.</span>
+        </div>
+    </div>
+    <div class="control-group">
         <label class="control-label">Plug</label>
         <div class="controls">
             <input type="number" min="0" class="input-mini" data-bind="value: settings.plugins.psucontrol_tplink.plug">

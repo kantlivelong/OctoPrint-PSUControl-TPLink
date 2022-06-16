@@ -24,7 +24,15 @@ class PSUControl_TPLink(octoprint.plugin.StartupPlugin,
     def get_settings_defaults(self):
         return dict(
             address = '',
-            plug = 0
+            plug = 0,
+
+            lightEnabled = False,
+            lightAddress = '',
+            lightPlug = 0,
+
+            otherEnabled = False,
+            otherAddress = '',
+            otherPlug = 0
         )
 
 
@@ -57,9 +65,9 @@ class PSUControl_TPLink(octoprint.plugin.StartupPlugin,
         psucontrol_helpers['register_plugin'](self)
 
 
-    def get_sysinfo(self):
+    def get_sysinfo(self, host):
         cmd = dict(system=dict(get_sysinfo=dict()))
-        result = self.send(cmd)
+        result = self.send(cmd, host)
 
         try:           
             return result['system']['get_sysinfo']
@@ -68,57 +76,62 @@ class PSUControl_TPLink(octoprint.plugin.StartupPlugin,
             return dict()
 
 
-    def change_psu_state(self, state):
-        cmd = dict(system=dict(set_relay_state=dict(state=state)))
-
-        if self.config['plug'] > 0:
-            sysinfo = self.get_sysinfo()
-            
-            if not sysinfo:
-                return
-
-            try:
-                device_id = sysinfo['children'][self.config['plug']-1]['id']
-            except KeyError:
-                self._logger.error("Expecting id for child index {}, got sysinfo={}".format(self.config['plug']-1, sysinfo))
-                return
-
-            cmd.update(dict(context=dict(child_ids=[device_id])))
-
-        self.send(cmd)
-
-
     def turn_psu_on(self):
         self._logger.debug("Switching PSU On")
-        self.change_psu_state(1)
+        self.turn_on_plug(self.config['address'], self.config['plug'])
+
+        if self.config['lightEnabled']:
+            self.turn_light_on()
+
+        if self.config['otherEnabled']:
+            self.turn_other_on()
 
 
     def turn_psu_off(self):
         self._logger.debug("Switching PSU Off")
-        self.change_psu_state(0)
+        self._logger.debug(f"{self.config}")
+        self.turn_off_plug(self.config['address'], self.config['plug'])
+
+        if self.config['lightEnabled']:
+            self.turn_light_off()
+
+        if self.config['otherEnabled']:
+            self.turn_other_off()
 
 
     def get_psu_state(self):
         self._logger.debug("get_psu_state")
-        sysinfo = self.get_sysinfo()
+        return self.get_plug_state(self.config['address'], self.config['plug'])
 
-        if not sysinfo:
-            return False
 
-        result = False
+    def turn_light_on(self):
+        self._logger.debug("Switching Light On")
+        self.turn_on_plug(self.config['lightAddress'], self.config['lightPlug'])
 
-        if self.config['plug'] > 0:
-            try:
-                result = bool(sysinfo['children'][self.config['plug']-1]['state'])
-            except KeyError:
-                self._logger.error("Expecting state for child index {}, got sysinfo={}".format(self.config['plug']-1, sysinfo))
-        else:
-            try:
-                result = bool(sysinfo['relay_state'])
-            except KeyError:
-                self._logger.error("Expecting relay_state, got sysinfo={}".format(sysinfo))
 
-        return result
+    def turn_light_off(self):
+        self._logger.debug("Switching Light Off")
+        self.turn_off_plug(self.config['lightAddress'], self.config['lightPlug'])
+
+
+    def get_light_state(self):
+        self._logger.debug("get_light_state")
+        return self.get_plug_state(self.config['lightAddress'], self.config['lightPlug'])
+
+    def turn_other_on(self):
+        self._logger.debug("Switching Other On")
+        self.turn_on_plug(self.config['otherAddress'], self.config['otherPlug'])
+
+
+    def turn_other_off(self):
+        self._logger.debug("Switching Other Off")
+        self.turn_off_plug(self.config['otherAddress'], self.config['otherPlug'])
+
+
+    def get_other_state(self):
+        self._logger.debug("get_other_state")
+        return self.get_plug_state(self.config['otherAddress'], self.config['otherPlug'])
+
 
 
     def encrypt(self, string):
@@ -140,17 +153,71 @@ class PSUControl_TPLink(octoprint.plugin.StartupPlugin,
             result += bytes([a])
         return result.decode('latin-1')
 
+    def get_plug_state(self, host, plug):
+        self._logger.debug("get_plug_state")
+        sysinfo = self.get_sysinfo(host)
 
-    def send(self, cmd):
+        if not sysinfo:
+            return False
+
+        result = False
+
+        if plug > 0:
+            try:
+                result = bool(sysinfo['children'][plug - 1]['state'])
+            except KeyError:
+                self._logger.error(
+                    "Expecting state for child index {}, got sysinfo={}".format(plug - 1, sysinfo))
+        else:
+            try:
+                result = bool(sysinfo['relay_state'])
+            except KeyError:
+                self._logger.error("Expecting relay_state, got sysinfo={}".format(sysinfo))
+
+        return result
+
+    def set_plug_state(self, state, host, plug):
+        cmd = dict(system=dict(set_relay_state=dict(state=state)))
+        self.send_to_plug(cmd, host, plug)
+
+
+    def turn_on_plug(self, host, plug):
+        self._logger.debug("turn_on_plug")
+        self.set_plug_state(1, host, plug)
+
+
+    def turn_off_plug(self, host, plug):
+        self._logger.debug("turn_off_plug")
+        self.set_plug_state(0, host, plug)
+
+    def send_to_plug(self, cmd, host, plug):
+        if plug > 0:
+            sysinfo = self.get_sysinfo(host)
+
+            if not sysinfo:
+                return dict()
+
+            try:
+                device_id = sysinfo['children'][plug - 1]['id']
+            except KeyError:
+                self._logger.error(
+                    "Expecting id for child index {}, got sysinfo={}".format(plug - 1, sysinfo))
+                return dict()
+
+            cmd.update(dict(context=dict(child_ids=[device_id])))
+
+        self.send(cmd, host)
+
+    def send(self, cmd, host):
         self._logger.debug("send={}".format(cmd))
         cmd_json = json.dumps(cmd)
 
         result = dict()
 
         try:
-            host = socket.gethostbyname(self.config['address'])
+            host = socket.gethostbyname(host)
         except Exception:
-            self._logger.error("Unable to resolve hostname {}".format(self.config['address']))
+            self._logger.error("Unable to resolve hostname {}".format(host))
             return result
 
         port = 9999
